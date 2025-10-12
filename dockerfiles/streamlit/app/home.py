@@ -9,10 +9,9 @@ st.markdown(
     
     ### Integrantes
     - Kevin Cajachuán Arroyo
-    - Daniel Herrera
-    - Augusto Doffo
-    - Matías Marando 
-    - Omar Lopez Cabrera
+    - Martín Paz
+    - Ariadna Garmendia
+
 
     ### Pasos para probar el proyecto
     - Clonar el [repositorio de GitHub](https://github.com/Kajachuan/AMq2), branch main

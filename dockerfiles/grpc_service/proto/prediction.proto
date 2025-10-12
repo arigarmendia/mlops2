@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package prediction;
+
+message PredictionRequest {
+    string date = 1;
+    string location = 2;
+    float min_temp = 3;
+    float max_temp = 4;
+    float rainfall = 5;
+    float evaporation = 6;
+    float sunshine = 7;
+    string wind_gust_dir = 8;
+    float wind_gust_speed = 9;
+    string wind_dir_9am = 10;
+    string wind_dir_3pm = 11;
+    float wind_speed_9am = 12;
+    float wind_speed_3pm = 13;
+    float humidity_9am = 14;
+    float humidity_3pm = 15;
+    float pressure_9am = 16;
+    float pressure_3pm = 17;
+    int32 cloud_9am = 18;
+    int32 cloud_3pm = 19;
+    float temp_9am = 20;
+    float temp_3pm = 21;
+    bool rain_today = 22;
+}
+
+message PredictionResponse {
+    bool int_output = 1;
+    string str_output = 2;
+}
+
+service PredictionService {
+    rpc Predict(PredictionRequest) returns (PredictionResponse);
+    rpc PredictStream(stream PredictionRequest) returns (stream PredictionResponse);
+}

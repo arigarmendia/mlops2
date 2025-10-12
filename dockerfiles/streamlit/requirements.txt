@@ -3,3 +3,6 @@ minio
 awswrangler
 pandas
 matplotlib
+boto3
+kafka-python
+

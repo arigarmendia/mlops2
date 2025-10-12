@@ -10,7 +10,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-airflow}:${PG_PASSWORD:-airflow}@postgres/${PG_DATABASE:-airflow}
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'  # Change to 'false' to remove the tutorials and examples
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.session'
     AIRFLOW__CORE__TEST_CONNECTION: 'Enabled'
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'True'
@@ -30,7 +30,7 @@ x-airflow-common: &airflow-common
     - frontend
     - backend
   user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
-  depends_on:  &airflow-common-depends-on
+  depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
 
@@ -120,7 +120,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${MLFLOW_PORT:-5000}:5000"
+      - "${MLFLOW_PORT:-5001}:5000"
     networks:
       - frontend
       - backend
@@ -139,37 +139,73 @@ services:
       timeout: 10s
       retries: 3
 
-  fastapi:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    networks:
+      - backend
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: echo ruok | nc localhost 2181 | grep imok
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grpc_service:
     restart: always
-    build: "./dockerfiles/fastapi"
-    image: backend_fastapi
-    container_name: fastapi
+    build: ./grpc_service
+    image: grpc_prediction_service
+    container_name: grpc_service
     profiles:
       - all
-    depends_on:
-      mlflow:
-        condition: service_healthy
-      airflow-webserver:
-        condition: service_healthy
     ports:
-      - "${FASTAPI_PORT:-8800}:8800"
+      - "${GRPC_PORT:-50051}:50051"
     networks:
       - frontend
       - backend
     environment:
-      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-minio}
-      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minio123}
-      - MLFLOW_S3_ENDPOINT_URL=http://s3:9000
-      - AWS_ENDPOINT_URL_S3=http://s3:9000
-    command: >
-      uvicorn app:app 
-      --host 0.0.0.0
-      --port 8800
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-predictions}
+      GRPC_PORT: 50051
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_ACCESS_KEY:-minio123}
+      AWS_ENDPOINT_URL_S3: http://s3:9000
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./grpc_service/files:/app/files
     healthcheck:
-      test: curl --include --request GET http://fastapi:8800/ || exit 1
-      interval: 60s
+      test: python -c "import grpc; grpc.aio.secure_channel('localhost:50051')" || exit 1
+      interval: 30s
       timeout: 10s
-      start_period: 120s
+      start_period: 10s
       retries: 3
 
   airflow-webserver:
@@ -197,7 +233,6 @@ services:
     environment:
       <<: *airflow-common-env
       CONNECTION_CHECK_MAX_COUNT: "0"
-    # Workaround for entrypoint issue. See: https://github.com/apache/airflow/issues/16252
     command:
       - bash
       - -c
@@ -218,28 +253,10 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # it should not be necessary for a basic implementation
-  #airflow-triggerer:
-  #  <<: *airflow-common
-  #  container_name: airflow_triggerer
-  #  command: triggerer
-  #  healthcheck:
-  #    test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
-  #    interval: 60s
-  #    timeout: 10s
-  #    retries: 5
-  #    start_period: 30s
-  #  restart: always
-  #  depends_on:
-  #    <<: *airflow-common-depends-on
-  #    airflow-init:
-  #      condition: service_completed_successfully
-
   airflow-init:
     <<: *airflow-common
     container_name: airflow_init
     entrypoint: /bin/bash
-    # yamllint disable rule:line-length
     command:
       - -c
       - |
@@ -288,7 +305,6 @@ services:
         mkdir -p /sources/logs /sources/dags /sources/plugins
         chown -R "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}" /sources/{logs,dags,plugins}
         exec /entrypoint airflow version
-    # yamllint enable rule:line-length
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
@@ -305,18 +321,23 @@ services:
     build: './dockerfiles/streamlit'
     image: streamlit_app
     container_name: streamlit_app
+    profiles:
+      - all
     networks:
       - frontend
-    depends_on:
-      fastapi:
-        condition: service_healthy
+      - backend
     ports:
       - "${STREAMLIT_PORT:-8501}:8501"
     environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-predictions}
       - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-minio}
       - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minio123}
       - MLFLOW_S3_ENDPOINT_URL=http://s3:9000
       - AWS_ENDPOINT_URL_S3=http://s3:9000
+    depends_on:
+      kafka:
+        condition: service_healthy
     healthcheck:
       test: curl --fail http://streamlit:8501/_stcore/health || exit 1
       interval: 10s

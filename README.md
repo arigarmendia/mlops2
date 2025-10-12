@@ -2,10 +2,9 @@
 
 ### Integrantes:
 - Kevin Cajachuán Arroyo
-- Daniel Herrera
-- Augusto Doffo
-- Matías Marando
-- Omar Lopez Cabrera
+- Martín Paz
+- Ariadna Garmendia
+
 
 
 ### Introducción

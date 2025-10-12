@@ -14,7 +14,7 @@ testing. The split between the training and testing datasets is 85/15 and they a
 
 
 default_args = {
-    'owner': "Kevin André Cajachuán Arroyo, Augusto Santiago Doffo, Daniel Fernando Herrera, Omar Victor Manuel Lopez Cabrera, Matías Alejandro Marando",
+    'owner': "Kevin André Cajachuán Arroyo, Martín Paz, Ariadna Garmendia",
     'depends_on_past': False,
     'retries': 1,
     'retry_delay': datetime.timedelta(minutes=5),
