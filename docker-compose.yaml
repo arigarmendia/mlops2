@@ -176,7 +176,7 @@ services:
 
   grpc-service:
     build:
-      context: ./grpc_services
+      context: ./grpc_service
       dockerfile: Dockerfile
     ports:
       - "50051:50051"
