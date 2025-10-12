@@ -21,9 +21,12 @@ RUN python -m grpc_tools.protoc \
     --grpc_python_out=./generated \
     proto/prediction.proto
 
+# Expose gRPC port
+EXPOSE 50051
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import grpc; grpc.aio.secure_channel('localhost:50051')" || exit 1
+    CMD ["sh", "-c", "netstat -tuln | grep 50051 || exit 1"]
 
 # Run gRPC server
 CMD ["python", "main.py"]

@@ -174,39 +174,16 @@ services:
       timeout: 5s
       retries: 3
 
-  grpc_service:
-    restart: always
-    build: ./grpc_service
-    image: grpc_prediction_service
-    container_name: grpc_service
-    profiles:
-      - all
+  grpc-service:
+    build:
+      context: ./grpc_services
+      dockerfile: Dockerfile
     ports:
-      - "${GRPC_PORT:-50051}:50051"
-    networks:
-      - frontend
-      - backend
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: ${KAFKA_TOPIC:-predictions}
-      GRPC_PORT: 50051
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_ACCESS_KEY:-minio123}
-      AWS_ENDPOINT_URL_S3: http://s3:9000
-    depends_on:
-      mlflow:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
+      - "50051:50051"
     volumes:
-      - ./grpc_service/files:/app/files
-    healthcheck:
-      test: python -c "import grpc; grpc.aio.secure_channel('localhost:50051')" || exit 1
-      interval: 30s
-      timeout: 10s
-      start_period: 10s
-      retries: 3
+      - ./grpc_services:/app
+    environment:
+      - PYTHONUNBUFFERED=1
 
   airflow-webserver:
     <<: *airflow-common

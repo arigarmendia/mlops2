@@ -56,7 +56,7 @@ def send_prediction_request(request_data):
         
         return request_data['request_id']
     except Exception as e:
-        st.error(f"Error sending request to Kafka: {e}")
+        st.error(f"Error enviando el pedido a Kafka: {e}")
         return None
 
 
@@ -74,7 +74,7 @@ def consume_prediction_response(request_id, timeout=30):
         
         for message in consumer:
             response = message.value
-            # Check if this response matches our request
+            # Checkear si la respuesta coincide con el pedido
             if response.get('request_id') == request_id:
                 consumer.close()
                 return response
