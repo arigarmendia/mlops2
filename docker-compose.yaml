@@ -181,7 +181,7 @@ services:
     ports:
       - "50051:50051"
     volumes:
-      - ./grpc_services:/app
+      - ./grpc_service:/app
     environment:
       - PYTHONUNBUFFERED=1
 
