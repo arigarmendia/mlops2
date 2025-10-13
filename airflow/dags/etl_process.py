@@ -95,68 +95,50 @@ def process_etl_rain_in_australia_data():
         categories_list.remove(target_col)
 
         # Separate Date fields
-        def get_season(date):
-            month = date.month
-            if month in [12, 1, 2]:
-                return 'Summer'
-            elif month in [3, 4, 5]:
-                return 'Fall'
-            elif month in [6, 7, 8]:
-                return 'Winter'
-            elif month in [9, 10, 11]:
-                return 'Spring'
-
         dataset['Date'] = pd.to_datetime(dataset['Date'])
         dataset['Year'] = dataset['Date'].dt.year
         dataset['Month'] = dataset['Date'].dt.month
         dataset['Day'] = dataset['Date'].dt.day
-        dataset['Season'] = dataset['Date'].apply(get_season)
+
+        month_to_season = {
+            12: 'Summer', 1: 'Summer', 2: 'Summer',
+            3: 'Fall', 4: 'Fall', 5: 'Fall',
+            6: 'Winter', 7: 'Winter', 8: 'Winter',
+            9: 'Spring', 10: 'Spring', 11: 'Spring'
+        }
+
+        dataset['Season'] = dataset['Month'].map(month_to_season)
         dataset.drop(columns='Date', inplace=True)
 
         # Aggregate data in order to impute nulls
         columns_with_nan = dataset.columns[dataset.isna().any()].tolist()
-        get_mode = lambda x: x.mode()[0] if not x.mode().empty else None
+        get_mode = lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan
 
-        df_grouped_by_day_month_location = dataset.groupby(['Day', 'Month', 'Location'])[columns_with_nan].agg(get_mode)
-        df_grouped_by_month_location = dataset.groupby(['Month', 'Location'])[columns_with_nan].agg(get_mode)
-        df_grouped_by_location = dataset.groupby(['Location'])[columns_with_nan].agg(get_mode)
-
-        # Imputing functions
-        def get_imputed_value(row, col):
-            val_from_day = df_grouped_by_day_month_location.loc[(row['Day'], row['Month'], row['Location']), col]
-            if not pd.isna(val_from_day):
-                return val_from_day
-
-            val_from_month = df_grouped_by_month_location.loc[(row['Month'], row['Location']), col]
-            if not pd.isna(val_from_month):
-                return val_from_month
-
-            val_from_location = df_grouped_by_location.loc[(row['Location']), col]
-            if not pd.isna(val_from_location):
-                return val_from_location
-
-            return dataset[col].mode()[0]
-
-        def row_mode_imputer(row):
-            cols_to_fill = row[row.isnull()].index.values
-            for col in cols_to_fill:
-                row[col] = get_imputed_value(row, col)
-            return row
-        
-        # Impute nulls
-        dataset = dataset.apply(row_mode_imputer, axis=1)
+        for col in columns_with_nan:
+            # Fill based on (Day, Month, Location)
+            dataset[col] = dataset[col].fillna(
+                dataset.groupby(['Day', 'Month', 'Location'])[col].transform(get_mode)
+            )
+            # Then (Month, Location)
+            dataset[col] = dataset[col].fillna(
+                dataset.groupby(['Month', 'Location'])[col].transform(get_mode)
+            )
+            # Then (Location)
+            dataset[col] = dataset[col].fillna(
+                dataset.groupby(['Location'])[col].transform(get_mode)
+            )
+            # Finally global mode
+            dataset[col] = dataset[col].fillna(dataset[col].mode().iloc[0])
 
         # Outliers treatment
-        def outliers_capping(df):
-            for col in df.select_dtypes(include='number').columns:
-                data_mean, data_std = df[col].mean(), df[col].std()
-                cutoff = 3 * data_std
-                lower, upper = data_mean - cutoff, data_mean + cutoff
-                df[col] = df[col].apply(lambda x: lower if x < lower else (upper if x > upper else x))
+        numeric_cols = dataset.select_dtypes(include='number').columns
+        means = dataset[numeric_cols].mean()
+        stds = dataset[numeric_cols].std()
+        cutoff = 3 * stds
+        lower = means - cutoff
+        upper = means + cutoff
 
-            return df
-        
-        dataset = outliers_capping(dataset)
+        dataset[numeric_cols] = dataset[numeric_cols].clip(lower, upper, axis=1)
 
         # Encoding RainToday and RainTomorrow
         encode_yes_no = lambda x: int(x == "Yes")
@@ -236,11 +218,10 @@ def process_etl_rain_in_australia_data():
 
         # Encoding Season
         season_to_degree = {'Winter': 0, 'Spring': 90, 'Summer': 180, 'Fall': 270}
-        dataset['SeasonDegree'] = dataset['Season'].map(season_to_degree)
-        dataset['Season_sin'] = np.sin(np.deg2rad(dataset['SeasonDegree']))
-        dataset['Season_cos'] = np.cos(np.deg2rad(dataset['SeasonDegree']))
+        deg = dataset['Season'].map(season_to_degree)
+        dataset['Season_sin'] = np.sin(np.deg2rad(deg))
+        dataset['Season_cos'] = np.cos(np.deg2rad(deg))
         dataset.drop(columns=["Season"], inplace=True)
-        dataset.drop(columns=["SeasonDegree"], inplace=True)
 
         data_end_path = "s3://data/raw/weatherAUS_transformed.csv"
         wr.s3.to_csv(df=dataset,
@@ -295,21 +276,14 @@ def process_etl_rain_in_australia_data():
         mlflow.set_tracking_uri('http://mlflow:5000')
         experiment = mlflow.set_experiment("Rain in Australia")
 
-        mlflow.start_run(run_name='ETL_run_' + datetime.datetime.today().strftime('%Y/%m/%d-%H:%M:%S'),
-                         experiment_id=experiment.experiment_id,
-                         tags={"experiment": "etl", "dataset": "Rain in Australia"},
-                         log_system_metrics=True)
-
-        mlflow_original_dataset = mlflow.data.from_pandas(original_dataset,
-                                                          source="https://www.kaggle.com/datasets/jsphyg/weather-dataset-rattle-package",
-                                                          targets=target_col,
-                                                          name="weather_data_complete")
-        mlflow_transformed_dataset = mlflow.data.from_pandas(dataset,
-                                                             source="https://www.kaggle.com/datasets/jsphyg/weather-dataset-rattle-package",
-                                                             targets=target_col,
-                                                             name="weather_data_transformed")
-        mlflow.log_input(mlflow_original_dataset, context="Dataset")
-        mlflow.log_input(mlflow_transformed_dataset, context="Dataset")
+        with mlflow.start_run(run_name='ETL_run_' + datetime.datetime.today().strftime('%Y/%m/%d-%H:%M:%S'),
+                              experiment_id=experiment.experiment_id,
+                              tags={"experiment": "etl", "dataset": "Rain in Australia"},
+                              log_system_metrics=True):
+            mlflow.log_param("raw_dataset_path", "s3://data/raw/weatherAUS.csv")
+            mlflow.log_param("transformed_dataset_path", "s3://data/raw/weatherAUS_transformed.csv")
+            mlflow.log_param("rows_after_transform", dataset.shape[0])
+            mlflow.log_param("columns_after_transform", list(dataset.columns))
 
     @task.virtualenv(
         task_id="split_dataset",

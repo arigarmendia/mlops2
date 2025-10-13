@@ -1,7 +1,7 @@
 # Librerías de gRPC
-grpcio~=1.64.1
-grpcio-tools~=1.64.1
-protobuf~=5.28.0
+grpcio~=1.73.1
+grpcio-tools~=1.73.1
+protobuf~=6.31.1
 
 # Kafka
 kafka-python~=2.0.2
