@@ -6,11 +6,13 @@ import boto3
 import mlflow
 import numpy as np
 import pandas as pd
+import logging
+import threading
 
 from datetime import datetime
-
 from concurrent import futures
-import logging
+from kafka import KafkaConsumer, KafkaProducer
+from kafka.errors import KafkaError
 
 # Import generated proto files
 import prediction_pb2
@@ -19,6 +21,14 @@ import prediction_pb2_grpc
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# =========================
+# Kafka Configuration
+# =========================
+
+KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+KAFKA_TOPIC_REQUEST = os.environ.get("KAFKA_TOPIC", "predictions")
+KAFKA_TOPIC_RESPONSE = os.environ.get("KAFKA_RESPONSE_TOPIC", "predictions-response")
 
 # =========================
 # Utilidades
@@ -65,17 +75,7 @@ def get_season(dt: pd.Timestamp) -> str:
 
 
 def transform_features_raw_to_model_input(req, data_dict):
-    """
-    Reproduce la transformación de tu FastAPI:
-    - parsea fecha → Year/Month/Day/Season → sin/cos
-    - mapea direcciones de viento a grados + sin/cos
-    - location → lat/long
-    - reordena columnas
-    - cast dtypes
-    - escala con StandardScaler (mean/std del data_dict)
-    """
-    # 1) construir DataFrame con los nombres "originales" de FastAPI
-    # notá que en protobuf usamos snake_case; acá mapeamos a los nombres originales
+    """Transform raw request data to model input format"""
     raw = {
         "Date": req.date,
         "Location": req.location,
@@ -102,7 +102,6 @@ def transform_features_raw_to_model_input(req, data_dict):
     }
     df = pd.DataFrame([raw])
 
-    # 2) Fecha → Year/Month/Day/Season + encoding
     df['Date'] = pd.to_datetime(df['Date'])
     df['Year'] = df['Date'].dt.year
     df['Month'] = df['Date'].dt.month
@@ -116,24 +115,20 @@ def transform_features_raw_to_model_input(req, data_dict):
     df['Season_cos'] = np.cos(np.deg2rad(df['SeasonDegree']))
     df.drop(columns=['Season', 'SeasonDegree'], inplace=True)
 
-    # 3) Direcciones de viento → grados + sin/cos (y dropear las originales)
     for dir_var in data_dict['wind_dir_columns']:
         df[dir_var] = df[dir_var].map(data_dict['wind_dir_degrees'])
         df[f'{dir_var}_sin'] = np.sin(np.deg2rad(df[dir_var]))
         df[f'{dir_var}_cos'] = np.cos(np.deg2rad(df[dir_var]))
         df.drop(columns=[dir_var], inplace=True)
 
-    # 4) Location → (lat, long)
     df[['Latitude', 'Longitude']] = df['Location'].apply(
         lambda x: pd.Series(data_dict['city_coordinates'][x])
     )
     df.drop(columns=['Location'], inplace=True)
 
-    # 5) Reordenar columnas y castear dtypes
     df = df[data_dict["columns_after_transform"]]
     df = df.astype(data_dict["columns_dtypes_after_transform"])
 
-    # 6) Estandarizar (StandardScaler)
     df = (df - data_dict["standard_scaler_mean"]) / data_dict["standard_scaler_std"]
     return df
 
@@ -149,40 +144,136 @@ model, version_model, data_dict = load_model("rain_in_australia_model_prod", "ch
 # =========================
 
 class PredictionServiceServicer(prediction_pb2_grpc.PredictionServiceServicer):
-    """gRPC service for rain prediction - dummy implementation"""
+    """gRPC service for rain prediction"""
 
     def Predict(self, request, context):
-        """
-        Single prediction endpoint - returns dummy response
-        """
+        """Single prediction endpoint"""
         try:
             features_df = transform_features_raw_to_model_input(request, data_dict)
-            pred = model.predict(features_df)  # 0/1
+            pred = model.predict(features_df)
             int_output = bool(int(pred[0]))
             str_output = "It won't rain tomorrow" if not int_output else "It will rain tomorrow"
             return prediction_pb2.PredictionResponse(int_output=int_output, str_output=str_output)
         except Exception as e:
+            logger.error(f"Prediction error: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             return prediction_pb2.PredictionResponse(int_output=False, str_output="error")
 
     def PredictStream(self, request_iterator, context):
-        """
-        Streaming prediction endpoint - returns dummy responses
-        TODO: Implement batch prediction logic
-        """
+        """Streaming prediction endpoint"""
         for request in request_iterator:
             logger.info(f"Received streaming prediction request for location: {request.location}")
+            try:
+                features_df = transform_features_raw_to_model_input(request, data_dict)
+                pred = model.predict(features_df)
+                int_output = bool(int(pred[0]))
+                str_output = "It won't rain tomorrow" if not int_output else "It will rain tomorrow"
+                yield prediction_pb2.PredictionResponse(int_output=int_output, str_output=str_output)
+            except Exception as e:
+                logger.error(f"Streaming prediction error: {e}")
+                yield prediction_pb2.PredictionResponse(int_output=False, str_output="error")
 
-            # Dummy response for each request
-            yield prediction_pb2.PredictionResponse(
-                int_output=False,
-                str_output="It won't rain tomorrow (dummy response)"
+
+# =========================
+# Kafka Consumer for Predictions
+# =========================
+
+def kafka_prediction_worker():
+    """Consume prediction requests from Kafka, call gRPC, and send responses"""
+    logger.info(f"Starting Kafka consumer on {KAFKA_BOOTSTRAP_SERVERS}")
+    
+    # Create Kafka consumer
+    consumer = KafkaConsumer(
+        KAFKA_TOPIC_REQUEST,
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+        auto_offset_reset='latest',
+        group_id='grpc_prediction_service',
+        consumer_timeout_ms=-1
+    )
+    
+    # Create Kafka producer for responses
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+        acks='all',
+        retries=3
+    )
+    
+    # Create gRPC channel
+    channel = grpc.insecure_channel('localhost:50051')
+    stub = prediction_pb2_grpc.PredictionServiceStub(channel)
+    
+    logger.info("Kafka consumer ready. Waiting for prediction requests...")
+    
+    for message in consumer:
+        try:
+            request_data = message.value
+            request_id = request_data.get('request_id')
+            
+            logger.info(f"Processing prediction request: {request_id}")
+            
+            # Build gRPC request
+            grpc_request = prediction_pb2.PredictionRequest(
+                date=request_data.get('date'),
+                location=request_data.get('location'),
+                min_temp=request_data.get('min_temp', 0.0),
+                max_temp=request_data.get('max_temp', 0.0),
+                rainfall=request_data.get('rainfall', 0.0),
+                evaporation=request_data.get('evaporation', 0.0),
+                sunshine=request_data.get('sunshine', 0.0),
+                wind_gust_dir=request_data.get('wind_gust_dir', ''),
+                wind_gust_speed=request_data.get('wind_gust_speed', 0.0),
+                wind_dir_9am=request_data.get('wind_dir_9am', ''),
+                wind_dir_3pm=request_data.get('wind_dir_3pm', ''),
+                wind_speed_9am=request_data.get('wind_speed_9am', 0.0),
+                wind_speed_3pm=request_data.get('wind_speed_3pm', 0.0),
+                humidity_9am=request_data.get('humidity_9am', 0.0),
+                humidity_3pm=request_data.get('humidity_3pm', 0.0),
+                pressure_9am=request_data.get('pressure_9am', 0.0),
+                pressure_3pm=request_data.get('pressure_3pm', 0.0),
+                cloud_9am=request_data.get('cloud_9am', 0),
+                cloud_3pm=request_data.get('cloud_3pm', 0),
+                temp_9am=request_data.get('temp_9am', 0.0),
+                temp_3pm=request_data.get('temp_3pm', 0.0),
+                rain_today=request_data.get('rain_today', False),
             )
+            
+            # Call gRPC service
+            response = stub.Predict(grpc_request)
+            
+            # Build response message
+            response_message = {
+                'request_id': request_id,
+                'int_output': response.int_output,
+                'str_output': response.str_output,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # Send response back to Kafka
+            producer.send(KAFKA_TOPIC_RESPONSE, value=response_message)
+            logger.info(f"Response sent for request: {request_id}")
+            
+        except Exception as e:
+            logger.error(f"Error processing prediction: {e}")
+            if request_id:
+                error_response = {
+                    'request_id': request_id,
+                    'int_output': False,
+                    'str_output': f'Error: {str(e)}',
+                    'timestamp': datetime.now().isoformat()
+                }
+                producer.send(KAFKA_TOPIC_RESPONSE, value=error_response)
 
 
 def serve():
-    """Start the gRPC server"""
+    """Start the gRPC server and Kafka consumer"""
+    # Start Kafka consumer in background thread
+    kafka_thread = threading.Thread(target=kafka_prediction_worker, daemon=True)
+    kafka_thread.start()
+    
+    # Start gRPC server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     prediction_pb2_grpc.add_PredictionServiceServicer_to_server(
         PredictionServiceServicer(), server
