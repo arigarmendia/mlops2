@@ -201,8 +201,8 @@ def kafka_prediction_worker():
         retries=3
     )
     
-    # Crear el canal gRPC 
-    channel = grpc.insecure_channel('localhost:50051')
+    # Crear el cliente gRPC 
+    channel = grpc.insecure_channel('localhost:50051') # No encriptado porque es solo un prototipo
     stub = prediction_pb2_grpc.PredictionServiceStub(channel)
     
     logger.info("Consumer de Kafka listo. Esperando pedidos de predicciones...")
@@ -212,7 +212,7 @@ def kafka_prediction_worker():
             request_data = message.value
             request_id = request_data.get('request_id')
             
-            logger.info(f"Procesando pedido de predicción: {request_id}")
+            logger.info(f"Procesando pedido de predicción con id: {request_id}")
             
             # Build gRPC request
             grpc_request = prediction_pb2.PredictionRequest(
@@ -253,7 +253,7 @@ def kafka_prediction_worker():
             
             # Send response back to Kafka
             producer.send(KAFKA_TOPIC_RESPONSE, value=response_message)
-            logger.info(f"Respuesta enviada a Kafka: {request_id}")
+            logger.info(f"Respuesta enviada por gRPC a Kafka con el id: {request_id}")
             
         except Exception as e:
             logger.error(f"Error procesando la predicción: {e}")
