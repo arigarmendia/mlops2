@@ -67,9 +67,10 @@ def consume_prediction_response(request_id, timeout=30):
             KAFKA_TOPIC_RESPONSE,
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            auto_offset_reset='latest',
+            auto_offset_reset='earliest',
             consumer_timeout_ms=timeout * 1000,
-            group_id=f'streamlit_group_{int(time.time())}'
+            group_id=f'streamlit_group_{int(time.time())}',
+            enable_auto_commit=False
         )
         
         for message in consumer:
@@ -97,7 +98,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["Datasets", "Gráficos", "Predicción", "Encue
 #-------------------------------- PESTAÑA 1 - DATASET -------------------------------
 with tab1:
 
-    st.header("Descripcion del dataset")
+    st.header("Descripción del dataset")
     st.write("Datos:", data.describe())
     st.divider()
 
@@ -126,7 +127,7 @@ with tab1:
 #-------------------------------- PESTAÑA 2 - GRAFICOS -------------------------------
 with tab2:
 
-    st.header("Vista de Graficos")
+    st.header("Vista de Gráficos")
 
     with st.container():
         if 'data' in locals() and data is not None:
@@ -146,7 +147,7 @@ with tab2:
 #-------------------------------- PESTAÑA 3 - PREDICCION -------------------------------
 with tab3:
 
-    st.header("Ingrese los datos y luego oprima el boton Predecir")
+    st.header("Ingrese los datos y luego oprima el botón Predecir")
 
     fecha = st.date_input("Fecha a predecir", value=None)
 
@@ -157,7 +158,7 @@ with tab3:
     MaxTemp = st.number_input("MaxTemp", min_value=None, max_value=None, value=28.3)
     Rainfall = st.number_input("Rainfall", min_value=None, max_value=None, value=2.6)
     Evaporation = st.number_input("Evaporation", min_value=None, max_value=None, value=3.5)
-    Sunshine = st.number_input("Temperatura minima", min_value=None, max_value=None, value=5.2)
+    Sunshine = st.number_input("Temperatura mínima", min_value=None, max_value=None, value=5.2)
 
     dir = ["E", "ENE", "ESE", "N", "NE", "NNE", "NNW", "NW", "S", "SE", "SSE", "SSW", "SW", "W", "WNW", "WSW"]
     WindGustDir = st.selectbox('WindGustDir', dir)
