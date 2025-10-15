@@ -30,6 +30,7 @@ se lleva a cabo siendo registrado en MLflow.
 - Un subsistema de predicción en tiempo real que utiliza Kafka y una API gRPC para manejar pedidos de
 predicción desde la web app y devolver los resultados.
 
+
 ![Diagrama de arquitectura](docs/Arquitectura.png)
 
 
@@ -63,14 +64,18 @@ predicción desde la web app y devolver los resultados.
 Para verificar el estado de los servicios ejecutar `docker -ps a`:
 
 ```
-CONTAINER ID   IMAGE                      STATUS                          PORTS                                         NAMES
-25c4b6c32ec8   streamlit_app              Up 2 minutes (healthy)          0.0.0.0:8501->8501/tcp, :::8501->8501/tcp     streamlit_app
-ff8435af8e0a   backend_fastapi            Up 2 minutes (healthy)          0.0.0.0:8800->8800/tcp, :::8800->8800/tcp     fastapi
-1f87c84bfefb   extending_airflow:latest   Up 2 minutes (healthy)          8080/tcp                                      airflow_scheduler
-0529803ae5b7   extending_airflow:latest   Up 2 minutes (healthy)          0.0.0.0:8080->8080/tcp, :::8080->8080/tcp     airflow_webserver
-d0561c825747   mlflow                     Up 2 minutes (healthy)          0.0.0.0:5000->5000/tcp, :::5000->5000/tcp     mlflow
-6e7efae2b44d   postgres_system            Up 2 minutes (healthy)          0.0.0.0:5432->5432/tcp, :::5432->5432/tcp     postgres
-063adf9ccb41   minio/minio:latest         Up 2 minutes (healthy)          0.0.0.0:9000-9001->9000-9001/tcp              minio
+CONTAINER ID   IMAGE                             COMMAND                  CREATED        STATUS                    PORTS                                            NAMES
+04a43f467842   grpc_service                      "python main.py"         21 hours ago   Up 21 hours (healthy)     0.0.0.0:50051->50051/tcp                         grpc_service
+5c668922b064   streamlit_app                     "streamlit run home.…"   22 hours ago   Up 22 hours (unhealthy)   0.0.0.0:8501->8501/tcp                           streamlit_app
+19837641b638   backend_fastapi                   "uvicorn app:app --h…"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:8800->8800/tcp                           fastapi
+d1ec16e20a96   extending_airflow:latest          "/usr/bin/dumb-init …"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:8080->8080/tcp                           airflow_webserver
+f6f0208f2291   extending_airflow:latest          "/usr/bin/dumb-init …"   42 hours ago   Up 42 hours (healthy)     8080/tcp                                         airflow_scheduler
+2c4fa585fc51   backend_graphql                   "uvicorn app_graphql…"   42 hours ago   Up 42 hours (unhealthy)   0.0.0.0:8801->8801/tcp                           graphql
+bd1016fba8e0   confluentinc/cp-kafka:7.0.1       "/etc/confluent/dock…"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:9092->9092/tcp, 0.0.0.0:9094->9094/tcp   kafka
+89636189e8d4   mlflow                            "mlflow server --bac…"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:5001->5000/tcp                           mlflow
+f194bfca7700   minio/minio:latest                "/usr/bin/docker-ent…"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:9000-9001->9000-9001/tcp                 minio
+47ec7753f940   postgres_system                   "docker-entrypoint.s…"   42 hours ago   Up 42 hours (healthy)     0.0.0.0:5432->5432/tcp                           postgres
+11a11bfa373a   confluentinc/cp-zookeeper:7.0.1   "/etc/confluent/dock…"   42 hours ago   Up 42 hours (healthy)     2888/tcp, 0.0.0.0:2181->2181/tcp, 3888/tcp       zookeeper
 ```
 
 
@@ -107,3 +112,5 @@ d0561c825747   mlflow                     Up 2 minutes (healthy)          0.0.0.
 
 [![](https://mermaid.ink/img/pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs?type=png)](https://mermaid.live/edit#pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs)
 
+### Pruebas con distintas APIs
+Durante el desarrollo del proyecto se probaron distintas APIs para la comunicación entre la aplicación de Streamlit y el servicio de inferencia. Se optó por gRPC debido a su eficiencia y rendimiento en comparación con REST y GraphQL. Los resultados del análisis comparativo se encuentran en la siguiente [notebook](notebooks/clients_comparison.ipynb).
