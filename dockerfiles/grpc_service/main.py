@@ -161,7 +161,7 @@ class PredictionServiceServicer(prediction_pb2_grpc.PredictionServiceServicer):
             return prediction_pb2.PredictionResponse(int_output=False, str_output="error")
 
     def PredictStream(self, request_iterator, context):
-        """Streaming prediction endpoint"""
+        """Endpoint para predicción en streaming"""
         for request in request_iterator:
             logger.info(f"Se recibió pedido de predicción para: {request.location}")
             try:

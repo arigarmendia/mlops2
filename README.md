@@ -112,5 +112,64 @@ f194bfca7700   minio/minio:latest                "/usr/bin/docker-ent…"   42 h
 
 [![](https://mermaid.ink/img/pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs?type=png)](https://mermaid.live/edit#pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs)
 
+### Definición del servicio gRPC
+
+El servicio de API gRPC está definido en el archivo `prediction.proto`:
+
+```protobuf
+service PredictionService {
+    rpc Predict(PredictionRequest) returns (PredictionResponse);
+    rpc PredictStream(stream PredictionRequest) returns (stream PredictionResponse);
+}
+```
+
+**Métodos:**
+- `Predict`: Predicción simple request/response
+- `PredictStream`: Streaming bidireccional para batch predictions
+
+### Esquema Request/Response (gRPC)
+
+#### Pedido de predicción (JSON → Kafka)
+
+```json
+{
+    "request_id": 1760397333160,
+    "timestamp": "2025-10-15T14:30:00",
+    "date": "2025-10-16",
+    "location": "Sydney",
+    "min_temp": 15.0,
+    "max_temp": 25.0,
+    "rainfall": 2.5,
+    "evaporation": 3.5,
+    "sunshine": 5.2,
+    "wind_gust_dir": "NW",
+    "wind_gust_speed": 44.3,
+    "wind_dir_9am": "N",
+    "wind_dir_3pm": "NW",
+    "wind_speed_9am": 41.9,
+    "wind_speed_3pm": 43.5,
+    "humidity_9am": 68.6,
+    "humidity_3pm": 81.3,
+    "pressure_9am": 1008.0,
+    "pressure_3pm": 1007.6,
+    "cloud_9am": 6,
+    "cloud_3pm": 8,
+    "temp_9am": 16.7,
+    "temp_3pm": 25.6,
+    "rain_today": false
+}
+```
+
+### Estructura de la respuesta (JSON ← Kafka)
+
+```json
+{
+    "request_id": 1760397333160,
+    "int_output": true,
+    "str_output": "It will rain tomorrow",
+    "timestamp": "2025-10-15T14:30:05"
+}
+```
+
 ### Pruebas con distintas APIs
 Durante el desarrollo del proyecto se probaron distintas APIs para la comunicación entre la aplicación de Streamlit y el servicio de inferencia. Se optó por gRPC debido a su eficiencia y rendimiento en comparación con REST y GraphQL. Los resultados del análisis comparativo se encuentran en la siguiente [notebook](notebooks/clients_comparison.ipynb).
