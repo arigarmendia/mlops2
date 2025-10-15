@@ -120,7 +120,7 @@ celerybeat.pid
 
 # Environments
 .venv
-env/
+.env/
 venv/
 ENV/
 env.bak/
@@ -158,3 +158,4 @@ cython_debug/
 #.idea/
 
 catboost_info/
+.DS_Store
