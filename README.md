@@ -26,7 +26,9 @@ predicciones.
 - En Apache Airflow, un DAG que, dado un nuevo conjunto de datos, reentrena el modelo. Se
 compara este modelo con el mejor modelo (llamado `champion`), y si es mejor, se reemplaza. Todo
 se lleva a cabo siendo registrado en MLflow.
-- Una web API basada en Streamlit para interactuar fácilmente con el modelo.
+- Una web app basada en Streamlit para interactuar fácilmente con el modelo.
+- Un subsistema de predicción en tiempo real que utiliza Kafka y una API gRPC para manejar pedidos de
+predicción desde la web app y devolver los resultados.
 
 ![Diagrama de arquitectura](docs/Arquitectura.png)
 
