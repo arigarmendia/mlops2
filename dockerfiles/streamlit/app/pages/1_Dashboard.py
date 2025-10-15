@@ -48,7 +48,7 @@ def send_prediction_request(request_data):
         
         # Agrego un timestamp con ID para poder correlacionar el pedido con la respuesta
         request_data['timestamp'] = datetime.now().isoformat()
-        request_data['request_id'] = int(time.time() * 1000)  # Unique ID
+        request_data['request_id'] = int(time.time() * 1000)  # Agrego otra componente al ID para que en lo posible sea único
         
         producer.send(KAFKA_TOPIC_REQUEST, value=request_data)
         producer.flush()
@@ -67,21 +67,27 @@ def consume_prediction_response(request_id, timeout=30):
             KAFKA_TOPIC_RESPONSE,
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            auto_offset_reset='earliest',
+            auto_offset_reset='latest',
             consumer_timeout_ms=timeout * 1000,
-            group_id=f'streamlit_group_{int(time.time())}',
-            enable_auto_commit=False
+            group_id='streamlit_responses',
+            enable_auto_commit=True
         )
-        
+        start_time = time.time()
+
         for message in consumer:
             response = message.value
             # Checkear si la respuesta coincide con el pedido
             if response.get('request_id') == request_id:
                 consumer.close()
                 return response
-        
+            # Timeout if taking too long
+            if time.time() - start_time > timeout:
+                consumer.close()
+                return None
+
         consumer.close()
         return None
+    
     except Exception as e:
         st.error(f"Error consumiendo la respuesta desde Kafka: {e}")
         return None
@@ -149,7 +155,8 @@ with tab3:
 
     st.header("Ingrese los datos y luego oprima el botón Predecir")
 
-    fecha = st.date_input("Fecha a predecir", value=None)
+    # fecha = st.date_input("Fecha a predecir", value=None)
+    fecha = st.date_input("Fecha a predecir", value=datetime.now().date())
 
     unique_locations = data['Location'].unique()
     Location = st.selectbox('Seleccione una ubicación', unique_locations)

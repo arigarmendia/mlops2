@@ -28,7 +28,7 @@ compara este modelo con el mejor modelo (llamado `champion`), y si es mejor, se 
 se lleva a cabo siendo registrado en MLflow.
 - Una web API basada en Streamlit para interactuar fácilmente con el modelo.
 
-![Diagrama de servicios](example_project.jpeg)
+![Diagrama de arquitectura](docs/Arquitectura.png)
 
 
 ### Pasos para probar el proyecto
@@ -80,3 +80,28 @@ d0561c825747   mlflow                     Up 2 minutes (healthy)          0.0.0.
 2. `train_model_rain_australia` (`dags/retrain_model.py`)
     - Este DAG realiza el reentrenamiento del modelo basado en uno previamente cargado en MLflow. Si las métricas del nuevo modelo superan las del modelo existente, este se actualiza, se etiqueta como "champion" y se desmarca el anterior.
     - Se ejecuta el primer día de cada mes a la 02:00 horas, dos horas después del otro DAG.
+
+### Detalles de configuración subsistema de predicción (Streamlit + Kafka + gRPC)
+
+![Sistema de predicción](docs/Streaming.png)
+
+**Componentes:**
+- **Streamlit Container** (Aplicación)
+  - Producer: Envía pedidos de predicción a Kafka
+  - Consumer: Recibe respuestas (predicciones) desde Kafka
+
+- **Kafka Cluster**
+  - Tópico: `predictions` -> para pedidos de predicciones
+  - Tópico: `predictions-response` -> para resultados de predicciones
+  - Zookeeper: coordinación del cluster Kafka
+
+- **Servicio de Inferencia (API gRPC Inference Service)** 
+  - Kafka Consumer: Lee pedidos de predicciones (tópico predictions)
+  - gRPC Client: Crea el stub y llama al gRPC server
+  - gRPC Server: Ejecuta la inferencia con el modelo de ML
+  - Kafka Producer: Envía los resultados al tópico de respuestas (predictions-response)
+
+### Diagrama de sequencia de un pedido de predicción
+
+[![](https://mermaid.ink/img/pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs?type=png)](https://mermaid.live/edit#pako:eNqNVNuO0zAQ_ZWRHxBI3ZBecqmFKq26SFy0sNrCC6qEjDNtzSZ21nEqlqpfxSfwY4wTElq6ReRlfJlzfOZ44h2TJkPGWYX3NWqJV0qsrSiWGugrhXVKqlJoBx8rtCCqJp7uLpxFUeTK-ZQ_k8uyPM19K1Z34hbvfWozfvHFPp-VFjMlnTK6AmdKJU-B69ubuQc1cYF2qySepa_Ks_wXlnYpEriF-5ouZrNeN4dhAK_1mvKEhUw4U0GGOchcFQKe-CjvYMluiBOlskvW8vQEx2RzGlmoNVhvcuVAGn0w_ayyU3hnEodRAC_1VhEDKSipiMyQGGjrkernDw1P3yzev3vWknRA4vA-cRgHMKdi60KdZ2ihPr-HTQL4YIWuVsYWdHYuALWzIhMgcmgWnQHSD-QlWuGpC2ql3DzCFVEJX1HWriU6lO6t-Bc0DuCyE-CvzRsmOtTfBv5G9h3AIenNO8IfGvaI6x6ZBvBKSGzurTR57ntMwJYWKgUb8UDr_6GoJzzuiGkAV7g1uac7FHaqyLcmtWMYwLWpyH_bnlLVuRPtNR4bygZsbVXGuLM1DliBZJ6fsp3nXjK3wQKXjNMww5UgGt-8e4LRz_PJmKJDWlOvN4yvRF7RrC7pL-gehz4FdYZ2bmrtGE8bBsZ37BvjyXgSpNMoGcZJOAmTJBqwB8ZHkyRIxkkUj5PhJIxHYbofsO_NmWEQDadxlI7CJJ2OaT8eMKrJGXvdvk_NM7X_BXI2kcs)
+

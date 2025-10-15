@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # =========================
-# Kafka Configuration
+# Configuración de Kafka
 # =========================
 
 KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
@@ -75,7 +75,7 @@ def get_season(dt: pd.Timestamp) -> str:
 
 
 def transform_features_raw_to_model_input(req, data_dict):
-    """Transform raw request data to model input format"""
+    """Transformar el pedido al formato que espera el modelo"""
     raw = {
         "Date": req.date,
         "Location": req.location,
@@ -144,18 +144,18 @@ model, version_model, data_dict = load_model("rain_in_australia_model_prod", "ch
 # =========================
 
 class PredictionServiceServicer(prediction_pb2_grpc.PredictionServiceServicer):
-    """gRPC service for rain prediction"""
+    """Servicio gRPC para predicción de lluvia"""
 
     def Predict(self, request, context):
-        """Single prediction endpoint"""
+        """Endpoint de predicción simple"""
         try:
             features_df = transform_features_raw_to_model_input(request, data_dict)
             pred = model.predict(features_df)
             int_output = bool(int(pred[0]))
-            str_output = "It won't rain tomorrow" if not int_output else "It will rain tomorrow"
+            str_output = "No lloverá mañana" if not int_output else "Lloverá mañana"
             return prediction_pb2.PredictionResponse(int_output=int_output, str_output=str_output)
         except Exception as e:
-            logger.error(f"Prediction error: {e}")
+            logger.error(f"Error de predicción: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             return prediction_pb2.PredictionResponse(int_output=False, str_output="error")
@@ -163,25 +163,25 @@ class PredictionServiceServicer(prediction_pb2_grpc.PredictionServiceServicer):
     def PredictStream(self, request_iterator, context):
         """Streaming prediction endpoint"""
         for request in request_iterator:
-            logger.info(f"Received streaming prediction request for location: {request.location}")
+            logger.info(f"Se recibió pedido de predicción para: {request.location}")
             try:
                 features_df = transform_features_raw_to_model_input(request, data_dict)
                 pred = model.predict(features_df)
                 int_output = bool(int(pred[0]))
-                str_output = "It won't rain tomorrow" if not int_output else "It will rain tomorrow"
+                str_output = "No lloverá mañana" if not int_output else "Lloverá mañana"
                 yield prediction_pb2.PredictionResponse(int_output=int_output, str_output=str_output)
             except Exception as e:
-                logger.error(f"Streaming prediction error: {e}")
+                logger.error(f"Error de predicción de streaming: {e}")
                 yield prediction_pb2.PredictionResponse(int_output=False, str_output="error")
 
 
-# =========================
-# Kafka Consumer for Predictions
-# =========================
+# ========================================
+# Consumer para peticiones de predicción
+# ========================================
 
 def kafka_prediction_worker():
-    """Consume prediction requests from Kafka, call gRPC, and send responses"""
-    logger.info(f"Starting Kafka consumer on {KAFKA_BOOTSTRAP_SERVERS}")
+    """Consumir pedidos de predicción desde Kafka, llamar a gRPC, and enviar respuesta"""
+    logger.info(f"Iniciando el consumer Kafka en el server {KAFKA_BOOTSTRAP_SERVERS}")
     
     # Create Kafka consumer
     consumer = KafkaConsumer(
@@ -201,18 +201,18 @@ def kafka_prediction_worker():
         retries=3
     )
     
-    # Create gRPC channel
-    channel = grpc.insecure_channel('localhost:50051')
+    # Crear el cliente gRPC 
+    channel = grpc.insecure_channel('localhost:50051') # No encriptado porque es solo un prototipo
     stub = prediction_pb2_grpc.PredictionServiceStub(channel)
     
-    logger.info("Kafka consumer ready. Waiting for prediction requests...")
+    logger.info("Consumer de Kafka listo. Esperando pedidos de predicciones...")
     
     for message in consumer:
         try:
             request_data = message.value
             request_id = request_data.get('request_id')
             
-            logger.info(f"Processing prediction request: {request_id}")
+            logger.info(f"Procesando pedido de predicción con id: {request_id}")
             
             # Build gRPC request
             grpc_request = prediction_pb2.PredictionRequest(
@@ -253,10 +253,10 @@ def kafka_prediction_worker():
             
             # Send response back to Kafka
             producer.send(KAFKA_TOPIC_RESPONSE, value=response_message)
-            logger.info(f"Response sent for request: {request_id}")
+            logger.info(f"Respuesta enviada por gRPC a Kafka con el id: {request_id}")
             
         except Exception as e:
-            logger.error(f"Error processing prediction: {e}")
+            logger.error(f"Error procesando la predicción: {e}")
             if request_id:
                 error_response = {
                     'request_id': request_id,
@@ -268,7 +268,7 @@ def kafka_prediction_worker():
 
 
 def serve():
-    """Start the gRPC server and Kafka consumer"""
+    """Iniciar el server gRPC + Kafka consumer"""
     # Start Kafka consumer in background thread
     kafka_thread = threading.Thread(target=kafka_prediction_worker, daemon=True)
     kafka_thread.start()
@@ -280,9 +280,9 @@ def serve():
     )
 
     server.add_insecure_port('[::]:50051')
-    logger.info("Starting gRPC server on port 50051...")
+    logger.info("Levantando el server gRPC server en el puerto 50051...")
     server.start()
-    logger.info("gRPC server started successfully")
+    logger.info("Servidor gRPC iniciado exitosamente")
 
     server.wait_for_termination()
 
