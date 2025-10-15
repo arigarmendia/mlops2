@@ -48,7 +48,7 @@ def send_prediction_request(request_data):
         
         # Agrego un timestamp con ID para poder correlacionar el pedido con la respuesta
         request_data['timestamp'] = datetime.now().isoformat()
-        request_data['request_id'] = int(time.time() * 1000)  # Unique ID
+        request_data['request_id'] = int(time.time() * 1000)  # Agrego otra componente al ID para que en lo posible sea único
         
         producer.send(KAFKA_TOPIC_REQUEST, value=request_data)
         producer.flush()
